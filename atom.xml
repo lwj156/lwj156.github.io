@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Hexo</title>
+  
+  
+  <link href="/atom.xml" rel="self"/>
+  
+  <link href="http://yoursite.com/"/>
+  <updated>2019-10-24T07:32:21.040Z</updated>
+  <id>http://yoursite.com/</id>
+  
+  <author>
+    <name>John Doe</name>
+    
+  </author>
+  
+  <generator uri="http://hexo.io/">Hexo</generator>
+  
+  <entry>
+    <title>lwj-blog</title>
+    <link href="http://yoursite.com/2019/10/24/lwj-blog/"/>
+    <id>http://yoursite.com/2019/10/24/lwj-blog/</id>
+    <published>2019-10-24T06:06:14.000Z</published>
+    <updated>2019-10-24T07:32:21.040Z</updated>
+    
+    <content type="html"><![CDATA[<h1 id="应用场景"><a href="#应用场景" class="headerlink" title="应用场景"></a>应用场景</h1><p>kafka具有高吞吐量(分区机制)，高容错率（解决并发消费问题）、高可靠性（副本备份）的优点，主要应用于以下三点</p><ol><li>接口异步解耦：减少请求时间</li><li>行为分析：记录用户行为进行分析</li><li>日志收集</li></ol><h1 id="主要组件"><a href="#主要组件" class="headerlink" title="主要组件"></a>主要组件</h1><p><img src="https://img-blog.csdnimg.cn/20191023162454537.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzM3NjgyNjY1,size_16,color_FFFFFF,t_70" alt="在这里插入图片描述"></p><ol><li>producer：生产者，负责发布消息到broker</li><li>customer：消费者，从broker拉取消息进行处理</li><li>zookeeper：维护kafka节点信息</li><li>Topic：消息类型</li><li>partitioner：分区，每个topic分为多个分区</li><li>broker：kafka集群的服务器</li><li>segment：磁盘上分区内的分片存储数据</li><li>offset：分区消息存储的偏移量</li><li>Coordinator：管理group的角色，产生于某个broker</li><li>LEO：(log end offset)记录了副本底层日志中下一条消息的位移值</li><li>HW：(high water)水位：所有副本中最小的已备份的位移值</li></ol><h1 id="配置分析"><a href="#配置分析" class="headerlink" title="配置分析"></a>配置分析</h1><ol><li>group.id：多个消费者构成一个分组消费一个主题内的所有分区（partitioner），若只有一个分区，则只有一个消费者可以消费</li><li>enable.auto.commit：上文提到的自动提交</li><li>auto.offset.reset：控制新的groupid消费该topic时的消息读取：<br>a.lastest：从最后的offset开始消费<pre><code>b.earlies：从最早的消息开始消费c.none：之前不存在offset则抛异常</code></pre></li><li>max.poll.records：消费者每次最大拉去消息数量</li></ol><h1 id="各流程分析"><a href="#各流程分析" class="headerlink" title="各流程分析"></a>各流程分析</h1><h2 id="生产者-gt-broker"><a href="#生产者-gt-broker" class="headerlink" title="生产者-&gt;broker"></a>生产者-&gt;broker</h2><ul><li>producer发送消息到broker可通过同步跟异步（需提供回调）的方式：kafka会把消息放入队列，通过批量发送到broker，可通过batch.size（消息字节数总量-&gt;默认16KB）和linger.ms（发送间隔时间）参数控制，满足一个条件即发送到broker</li><li>消息分发到partitioner：kafka默认机制-&gt;key为null则随机分发，可通过自定义实现Partitioner实现不同的分发策略<h2 id="消费者-gt-broker-通知已消费"><a href="#消费者-gt-broker-通知已消费" class="headerlink" title="消费者-&gt;broker(通知已消费)"></a>消费者-&gt;broker(通知已消费)</h2></li><li>customer消费完后会向broker发送commit指令，broker存储该消费者的偏移量信息（磁盘上__consumer_offset默认有50个分区，通过goupid与分区数量取模确定存储分区），commit方式分为手动和自动提交</li><li>自动提交可能会导致消息丢失：自动提交时间不宜过长：若在提交时间内，已消费消息了，然后服务挂掉，服务重启后又会从这个offset开始消费（会导致重复消费的问题）：可通过手动提交控制，或者offset存储在redis或者其他持久化层面<h2 id="broker-gt-消费者（消费者消费消息）"><a href="#broker-gt-消费者（消费者消费消息）" class="headerlink" title="broker-&gt;消费者（消费者消费消息）"></a>broker-&gt;消费者（消费者消费消息）</h2></li><li>消费端可通过手动指定消费分区</li><li>分区分配策略：<br> 1.Range（默认）：单个Topic内近似平均分配，多个Topic会分配不均<br>  2.RoundRobin（轮询）：通过hashcode排序，按照轮询分配<br>  3.StickyAssignor（粘性）：类似轮询，再一个broker挂掉后，会在原先基础上分配，而不是重新分配</li></ul><h2 id="确定Coordinator"><a href="#确定Coordinator" class="headerlink" title="确定Coordinator"></a>确定Coordinator</h2><ul><li>Coordinator的作用在于管理group消费者组，分配分区。消费者会向任意一个broker发送GroupCoordinatorRequest请求，服务端返回一个最小的broker节点的id作为Coordinator</li></ul><h2 id="JoinGroup过程（新消费者加入或宕机）"><a href="#JoinGroup过程（新消费者加入或宕机）" class="headerlink" title="JoinGroup过程（新消费者加入或宕机）"></a>JoinGroup过程（新消费者加入或宕机）</h2><ul><li>joinGroup肯定是发生在Coordinator之后，新消费者的加入或宕机会触发rebalance（通过zookeeper的watch机制监控节点或者当消费者指定时间内没发送给Coodinator心跳请求HeartbeatRequest）：分为join和sync</li><li>join：group组中的所有customer向任意一个broker发送innergroup请求，返回确定一个customer作为leader对象（随机算法）</li><li>sync：leader以及其他customer向Coordinator发送SyncGroupRequest请求，将分区策略分发给其他消费者（主要信息是该消费哪个分区）</li></ul><h2 id="分区副本（replica）机制"><a href="#分区副本（replica）机制" class="headerlink" title="分区副本（replica）机制"></a>分区副本（replica）机制</h2><ul><li>partitioner分区机制提高了kafka的吞吐量和并发消费的问题，但是单个partitioner肯定会有可靠性问题，因此引入的副本机制来实现备份</li><li>sh kafka-topics.sh –create –zookeeper zookeeperip:2181 –replication-factor 3 –partitions 3 –topic testTopic 创建带有2个分区副本的partitioner</li><li>三种副本：<br> 1.leader副本：响应读写请求<pre><code>2.follower副本：只做数据备份，作为备份分区3.ISR副本：包含leader和follow副本（replica.lag.time.max.ms控制follow副本同步数据时间。超过则剔除）</code></pre></li><li>replica都宕机后处理方式：等待replica重新启用（一致性）或者不一定是ISR中的副本作为leader（可用性）中作取舍</li></ul><h2 id="副本同步原理"><a href="#副本同步原理" class="headerlink" title="副本同步原理"></a>副本同步原理</h2><ul><li>producer发送到leader分区，leader写入磁盘log，follow向leader节点pull数据写入log后向leader发送ACK，leader收到所有ack后增加HW值并向producer发送ACK，则消息发送成功</li><li>主从副本之间同步过程：<br>1.leader获取数据后，follow节点<pre><code>第一次发送fetch请求：副本同步leader的LEO数据第二次发送fetch请求：更新leader的remoteLEO数据，更新follow的HW为remoteLEO数据</code></pre>2.leader获取数据前，follow节点发送fetch请求：follow请求阻塞到新消息发送<br>-副本同步导致的数据丢失：由于HW是异步延迟更新，更新过程中如果leader宕机，就可能导致该数据丢失，leader恢复的时候该消息可能会截断。新kafka 0.11版本后，broker保存缓存定期写入checkpoint，保存epoch和offset的值</li></ul><h2 id="副本选举过程"><a href="#副本选举过程" class="headerlink" title="副本选举过程"></a>副本选举过程</h2><p>选举策略：ISR优先选取第一个作为leader副本，如果ISR为空并且unclean.leader.election.enable（是否允许非ISR副本作为leader）为false，则抛出NoReplicaOnlineException异常</p><h2 id="消息的存储"><a href="#消息的存储" class="headerlink" title="消息的存储"></a>消息的存储</h2><p><img src="https://img-blog.csdnimg.cn/20191023203055765.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L3FxXzM3NjgyNjY1,size_16,color_FFFFFF,t_70" alt="在这里插入图片描述"></p><ul><li>分区partitioner中又有分段概念（LogSegment）：包括索引文件（.index）和（.log）数据文件</li><li>根据offset查找索引文件确定文件的position值，根据position值找到对应的log文件<h1 id="kafka如何保证消息可靠性"><a href="#kafka如何保证消息可靠性" class="headerlink" title="kafka如何保证消息可靠性"></a>kafka如何保证消息可靠性</h1></li><li>分区副本机制</li><li>配置acks：0-&gt;producer只负责发送消息（不考虑broker是否宕机），1-&gt;leader写入本地日志就认为消息成功（follow未同步），-1-&gt;需要等到follow都备份数据通知producer发送成功（保证producer-&gt;broker）</li><li>消费者手动提交机制（自动提交可能导致消息丢失）保证customer-&gt;broker</li></ul>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;h1 id=&quot;应用场景&quot;&gt;&lt;a href=&quot;#应用场景&quot; class=&quot;headerlink&quot; title=&quot;应用场景&quot;&gt;&lt;/a&gt;应用场景&lt;/h1&gt;&lt;p&gt;kafka具有高吞吐量(分区机制)，高容错率（解决并发消费问题）、高可靠性（副本备份）的优点，主要应用于以下三点&lt;/p&gt;
+&lt;
+      
+    
+    </summary>
+    
+    
+    
+  </entry>
+  
+  <entry>
+    <title>Hello World</title>
+    <link href="http://yoursite.com/2019/10/24/hello-world/"/>
+    <id>http://yoursite.com/2019/10/24/hello-world/</id>
+    <published>2019-10-24T05:43:59.570Z</published>
+    <updated>2019-10-24T05:43:59.570Z</updated>
+    
+    <content type="html"><![CDATA[<p>Welcome to <a href="https://hexo.io/" target="_blank" rel="noopener">Hexo</a>! This is your very first post. Check <a href="https://hexo.io/docs/" target="_blank" rel="noopener">documentation</a> for more info. If you get any problems when using Hexo, you can find the answer in <a href="https://hexo.io/docs/troubleshooting.html" target="_blank" rel="noopener">troubleshooting</a> or you can ask me on <a href="https://github.com/hexojs/hexo/issues" target="_blank" rel="noopener">GitHub</a>.</p><h2 id="Quick-Start"><a href="#Quick-Start" class="headerlink" title="Quick Start"></a>Quick Start</h2><h3 id="Create-a-new-post"><a href="#Create-a-new-post" class="headerlink" title="Create a new post"></a>Create a new post</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo new <span class="string">"My New Post"</span></span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/writing.html" target="_blank" rel="noopener">Writing</a></p><h3 id="Run-server"><a href="#Run-server" class="headerlink" title="Run server"></a>Run server</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo server</span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/server.html" target="_blank" rel="noopener">Server</a></p><h3 id="Generate-static-files"><a href="#Generate-static-files" class="headerlink" title="Generate static files"></a>Generate static files</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo generate</span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/generating.html" target="_blank" rel="noopener">Generating</a></p><h3 id="Deploy-to-remote-sites"><a href="#Deploy-to-remote-sites" class="headerlink" title="Deploy to remote sites"></a>Deploy to remote sites</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo deploy</span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/deployment.html" target="_blank" rel="noopener">Deployment</a></p>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;p&gt;Welcome to &lt;a href=&quot;https://hexo.io/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Hexo&lt;/a&gt;! This is your very first post. Check &lt;a href=&quot;https://hexo.
+      
+    
+    </summary>
+    
+    
+    
+  </entry>
+  
+</feed>
